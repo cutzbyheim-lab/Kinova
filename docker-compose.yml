@@ -1,0 +1,76 @@
+# KINOVA local stack — start everything with:  docker compose up --build
+# Then open http://localhost:3000
+
+name: kinova
+
+x-api-env: &api-env
+  DATABASE_URL: postgresql+psycopg://kinova:kinova@db:5432/kinova
+  REDIS_URL: redis://redis:6379/0
+  STORAGE_DIR: /data/storage
+  HF_HOME: /data/models
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: kinova
+      POSTGRES_PASSWORD: kinova
+      POSTGRES_DB: kinova
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kinova"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: ./apps/api
+    env_file:
+      - path: .env
+        required: false
+    environment: *api-env
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    volumes:
+      - storage:/data/storage
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  worker:
+    build: ./apps/api
+    env_file:
+      - path: .env
+        required: false
+    environment: *api-env
+    # One job at a time: video work is CPU-heavy on a laptop.
+    command: celery -A app.workers.celery_app worker --loglevel=INFO --concurrency=1 -Q production
+    volumes:
+      - storage:/data/storage
+      - models:/data/models
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      api: { condition: service_started }
+
+  web:
+    build: ./apps/web
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  storage:
+  models:
