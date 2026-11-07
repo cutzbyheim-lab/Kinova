@@ -28,7 +28,7 @@ Install **Git for Windows** (<https://git-scm.com/download/win>) if you don't ha
 
 ```powershell
 cd $HOME\Documents
-git clone https://github.com/cutzbyheim-lab/kinova.git
+git clone https://github.com/cutzbyheim-lab/Kinova.git
 cd kinova
 copy .env.example .env
 notepad .env
