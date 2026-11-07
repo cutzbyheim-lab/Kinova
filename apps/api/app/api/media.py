@@ -15,7 +15,7 @@ from app.core.context import RequestContext, get_ctx, get_owned
 from app.core.db import get_db
 from app.core.signing import verify
 from app.media.ffmpeg import MediaError, probe, thumbnail
-from app.models import MediaAsset, Project
+from app.models import MediaAsset, ProductionJob, Project
 from app.schemas.api import MediaOut
 from app.services.audit import audit
 from app.services.storage import derived_key, get_storage, source_key
@@ -135,6 +135,8 @@ def delete_media(asset_id: uuid.UUID, db: Session = Depends(get_db), ctx: Reques
     storage = get_storage()
     storage.delete_prefix(f"orgs/{ctx.org_id}/source/{asset.id}")
     storage.delete_prefix(f"orgs/{ctx.org_id}/derived/{asset.id}")
+    for job_id in db.scalars(select(ProductionJob.id).where(ProductionJob.source_asset_id == asset.id)):
+        storage.delete_prefix(f"orgs/{ctx.org_id}/generated/{job_id}")
     db.delete(asset)
     audit(db, ctx, "media.delete", "media", asset_id)
     db.commit()

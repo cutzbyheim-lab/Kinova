@@ -167,6 +167,7 @@ class JobOut(ORM):
     plan_summary: str | None = None
     trends: dict | None = None
     warnings: list[str] = []
+    skipped_stages: list[str] = []
     source: dict | None = None
 
 

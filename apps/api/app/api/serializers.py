@@ -28,6 +28,7 @@ def job_fields(j: ProductionJob) -> dict:
         "trends": r.get("trends"),
         "warnings": r.get("warnings") or [],
         "source": r.get("source"),
+        "skipped_stages": r.get("skipped") or [],
     }
 
 

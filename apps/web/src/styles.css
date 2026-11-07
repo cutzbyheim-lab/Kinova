@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+/* ─── KINOVA design tokens ─────────────────────────────────────
+   Warm near-black ground, cream type, one hot accent (orange),
+   one cool accent (violet) reserved for numerals & secondary data. */
+@theme {
+  --color-ink: #15110f;
+  --color-ink-2: #1a1513;
+  --color-panel: #1e1815;
+  --color-panel-2: #201916;
+  --color-panel-3: #2a211d;
+  --color-line: #2e2622;
+  --color-line-2: #3a302b;
+  --color-line-3: #4a3e37;
+  --color-cream: #f4ede4;
+  --color-mute: #d6ccc2;
+  --color-dim: #b9aea4;
+  --color-faint: #a89c92;
+  --color-orange: #ff6a2b;
+  --color-orange-deep: #e5531a;
+  --color-violet: #9a80ff;
+  --color-ok: #8fd694;
+  --color-warn: #f2c14e;
+  --color-danger: #ff7a6b;
+
+  --font-sans: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --radius-card: 22px;
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --animate-rise: rise 0.5s var(--ease-out-soft) both;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-march: march 0.9s linear infinite;
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes shimmer {
+    from { background-position: -400px 0; }
+    to { background-position: 400px 0; }
+  }
+  @keyframes march {
+    from { background-position: 0 0; }
+    to { background-position: 20px 0; }
+  }
+}
+
+@layer base {
+  html { color-scheme: dark; }
+  body {
+    margin: 0;
+    background: var(--color-ink);
+    color: var(--color-cream);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--color-orange); color: var(--color-ink); }
+  a { color: inherit; }
+  :focus-visible { outline: 2px solid var(--color-orange); outline-offset: 3px; border-radius: 6px; }
+  input, textarea, select, button { font: inherit; }
+}
+
+@layer components {
+  .serif-i { font-family: var(--font-serif); font-style: italic; font-weight: 400; }
+  .eyebrow { font-size: 13px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-dim); }
+  .card { background: var(--color-panel); border: 1px solid var(--color-line); border-radius: var(--radius-card); }
+  .field {
+    width: 100%; min-height: 46px; box-sizing: border-box; padding: 10px 14px;
+    background: var(--color-panel-2); border: 1px solid var(--color-line-2); border-radius: 14px;
+    color: var(--color-cream); font-size: 15px; transition: border-color .15s;
+  }
+  .field::placeholder { color: var(--color-faint); }
+  .field:hover { border-color: var(--color-line-3); }
+  .field:focus { outline: none; border-color: var(--color-orange); }
+  .label { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 600; color: var(--color-mute); }
+  .skeleton {
+    background: linear-gradient(90deg, var(--color-panel) 0, var(--color-panel-3) 40%, var(--color-panel) 80%);
+    background-size: 800px 100%; animation: var(--animate-shimmer);
+  }
+  .striped {
+    background: repeating-linear-gradient(90deg, var(--color-orange) 0 6px, transparent 6px 10px);
+    animation: var(--animate-march);
+  }
+}

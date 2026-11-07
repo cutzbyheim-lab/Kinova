@@ -1,4 +1,11 @@
-"""Deterministic FFmpeg renderer: executes one validated Variation into a vertical MP4."""
+"""Deterministic FFmpeg renderer: executes one validated Variation into a vertical MP4.
+
+Memory-safe three-step render (works on an 8 GB laptop with long 4K footage):
+  1. each clip is cut with input seeking and normalised (size, fps, audio) into its own segment,
+  2. segments are joined losslessly with the concat demuxer,
+  3. one final pass burns in captions and normalises loudness.
+A single filtergraph with many trims of the same input buffers raw frames and can exhaust RAM.
+"""
 
 import tempfile
 from dataclasses import dataclass
@@ -20,6 +27,22 @@ class RenderOutput:
     cue_count: int
 
 
+def _cut_segment(src: Path, has_audio: bool, start: float, dur: float, w: int, h: int, out: Path) -> None:
+    frame = f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,fps=30,format=yuv420p"
+    args = ["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.3f}", "-t", f"{dur:.3f}", "-i", str(src)]
+    if has_audio:
+        args += ["-map", "0:v:0", "-map", "0:a:0"]
+    else:
+        args += ["-f", "lavfi", "-t", f"{dur:.3f}", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+                 "-map", "0:v:0", "-map", "1:a:0"]
+    args += [
+        "-vf", frame, "-af", "aresample=48000,aformat=channel_layouts=stereo",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-g", "60",
+        "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-t", f"{dur:.3f}", str(out),
+    ]
+    run(args, timeout=1800)
+
+
 def render_variation(
     src: Path,
     src_probe: ProbeResult,
@@ -32,51 +55,38 @@ def render_variation(
 ) -> RenderOutput:
     w, h = ASPECTS.get(aspect, ASPECTS["9:16"])
     out_dir.mkdir(parents=True, exist_ok=True)
-    out = out_dir / f"{variation.key}.mp4"
+    out = (out_dir / f"{variation.key}.mp4").resolve()
     total = variation.duration
+    src = src.resolve()
 
     with tempfile.TemporaryDirectory(prefix="kinova-render-") as tmp:
         tmp_dir = Path(tmp)
+        # 1. segments
+        seg_paths = []
+        for i, c in enumerate(variation.clips):
+            seg = tmp_dir / f"seg{i:02d}.mp4"
+            _cut_segment(src, src_probe.has_audio, c.start, c.end - c.start, w, h, seg)
+            seg_paths.append(seg)
+        # 2. join
+        (tmp_dir / "list.txt").write_text("".join(f"file '{p.name}'\n" for p in seg_paths))
+        joined = tmp_dir / "joined.mp4"
+        run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", "list.txt", "-c", "copy", str(joined)],
+            cwd=tmp_dir, timeout=600)
+        # 3. captions + loudness
         cues = chunk_words(words_for_cut(transcript, variation)) if with_subtitles else []
         hook = variation.hook_text if with_subtitles else ""
-        ass_used = bool(cues or hook)
-        if ass_used:
-            (tmp_dir / "subs.ass").write_text(build_ass(cues, hook, variation.subtitle_position, accent, total), encoding="utf-8")
-
-        parts: list[str] = []
-        labels_v: list[str] = []
-        labels_a: list[str] = []
-        frame = (
-            f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,fps=30,format=yuv420p"
-        )
-        for i, c in enumerate(variation.clips):
-            parts.append(f"[0:v]trim=start={c.start}:end={c.end},setpts=PTS-STARTPTS,{frame}[v{i}]")
-            labels_v.append(f"[v{i}]")
-            if src_probe.has_audio:
-                parts.append(f"[0:a]atrim=start={c.start}:end={c.end},asetpts=PTS-STARTPTS,aresample=48000[a{i}]")
-                labels_a.append(f"[a{i}]")
-        n = len(variation.clips)
-        if src_probe.has_audio:
-            interleaved = "".join(v + a for v, a in zip(labels_v, labels_a, strict=True))
-            parts.append(f"{interleaved}concat=n={n}:v=1:a=1[vc][ac]")
-            parts.append("[ac]loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[aout]")
+        args = ["ffmpeg", "-y", "-v", "error", "-i", str(joined)]
+        if cues or hook:
+            (tmp_dir / "subs.ass").write_text(
+                build_ass(cues, hook, variation.subtitle_position, accent, total), encoding="utf-8")
+            fonts_dir = next((d for d in FONTS_DIRS if Path(d).is_dir()), None)
+            vf = "ass=subs.ass" + (f":fontsdir={fonts_dir}" if fonts_dir else "")
+            args += ["-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p"]
         else:
-            parts.append(f"{''.join(labels_v)}concat=n={n}:v=1:a=0[vc]")
-        fonts_dir = next((d for d in FONTS_DIRS if Path(d).is_dir()), None)
-        if ass_used:
-            fd = f":fontsdir={fonts_dir}" if fonts_dir else ""
-            parts.append(f"[vc]ass=subs.ass{fd}[vout]")
-        else:
-            parts.append("[vc]null[vout]")
-
-        args = ["ffmpeg", "-y", "-v", "error", "-i", str(src.resolve())]
-        if not src_probe.has_audio:
-            args += ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]
-        args += ["-filter_complex", ";".join(parts), "-map", "[vout]"]
-        args += ["-map", "[aout]"] if src_probe.has_audio else ["-map", "1:a", "-shortest"]
+            args += ["-c:v", "copy"]
         args += [
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out.resolve()),
+            "-af", "loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000",
+            "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out),
         ]
         run(args, cwd=tmp_dir, timeout=1800)
 

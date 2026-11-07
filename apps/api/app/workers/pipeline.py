@@ -349,6 +349,7 @@ def run_job(job_id: str) -> str:
                 c.event(stage, "done", msg)
             except Skip as s:
                 c.event(stage, "skipped", str(s))
+                c.set_result(skipped=sorted(set(job.result.get("skipped", [])) | {stage}))
             c.set_result(**{f"{stage}_done": True})
             db.commit()
 
