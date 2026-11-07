@@ -28,6 +28,7 @@ export const STAGE_LABELS: Record<string, string> = {
   transcribe: "Transcribe",
   trends: "Trends",
   plan: "Moments",
+  assets: "B-roll & music",
   render: "Render",
   qc: "Quality check",
   copy: "Copy",

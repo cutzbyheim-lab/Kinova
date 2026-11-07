@@ -53,6 +53,9 @@ export default function Settings() {
               <li>APIs &amp; Services → Library → enable <strong className="text-cream">YouTube Data API v3</strong>.</li>
               <li>Credentials → Create credentials → API key.</li>
             </ol>} />
+          <Integration name="Pexels B-roll" on={!!s.data.integrations.pexels?.configured} env="PEXELS_API_KEY"
+            what="Free stock footage for cutaways. The AI picks where a shot helps the story, KINOVA fetches a vertical clip and credits the creator. Free for commercial use; 200 searches an hour."
+            how={<p className="m-0">Create a free account at <a href="https://www.pexels.com/api/" target="_blank" rel="noreferrer" className="font-semibold text-cream">pexels.com/api</a> and copy “Your API Key”.</p>} />
           <Integration name="Whisper (speech-to-text)" on={s.data.integrations.whisper.configured} env="WHISPER_ENABLED"
             what="Free, open-source transcription that runs on your own computer. The model downloads automatically the first time (about 150 MB for 'base')."
             extra={`Model: ${s.data.integrations.whisper.model}`}

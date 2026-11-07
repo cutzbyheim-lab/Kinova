@@ -35,14 +35,21 @@ def _escape(text: str) -> str:
     return text.replace("\\", "").replace("{", "(").replace("}", ")").replace("\n", " ")
 
 
-def words_for_cut(transcript: dict | None, variation: Variation) -> list[dict]:
-    """Map transcript words onto the cut's own timeline (clips are concatenated)."""
-    if not transcript:
+def words_for_cut(transcripts: dict | list | None, variation: Variation) -> list[dict]:
+    """Map transcript words onto the cut's own timeline (clips are concatenated).
+
+    `transcripts` is one transcript (single source) or a list indexed like `Clip.source`.
+    """
+    if not transcripts:
         return []
-    words = [w for seg in transcript.get("segments", []) for w in seg.get("words", [])]
+    per_source = [transcripts] if isinstance(transcripts, dict) else list(transcripts)
+    words_by_source = [
+        [w for seg in (t or {}).get("segments", []) for w in seg.get("words", [])] for t in per_source
+    ]
     out: list[dict] = []
     offset = 0.0
     for clip in variation.clips:
+        words = words_by_source[clip.source] if clip.source < len(words_by_source) else []
         for w in words:
             ws, we = float(w["start"]), float(w["end"])
             if we <= clip.start or ws >= clip.end:

@@ -118,7 +118,7 @@ export default function Overview() {
               <StatusChip status={featuredJob.status} />
             </Link>
             <div className="min-w-[280px] flex-[1_1_520px]"><PipelineBar job={featuredJob} compact /></div>
-            <span className="serif-i text-[30px] text-orange">{Math.min(stageIdx, 7)} / 7</span>
+            <span className="serif-i text-[30px] text-orange">{Math.min(stageIdx, STAGES.length - 1)} / {STAGES.length - 1}</span>
           </>
         ) : (
           <p className="m-0 text-[15px] text-mute"><span className="eyebrow mr-3">Pipeline</span>Idle — nothing in production yet.</p>

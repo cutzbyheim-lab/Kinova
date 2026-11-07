@@ -130,3 +130,44 @@ def test_llm_tracks_cost_and_enforces_cap(monkeypatch):
         llm.complete("plan", "smart", "sys", "x" * 50_000, max_tokens=8000)
     assert fake.calls == 1  # the over-budget call never hit the API
     assert llm_mod.estimate_cost("smart", 0, 8000) == pytest.approx(0.08)
+
+
+def test_plan_handles_sources_broll_and_music():
+    plan = EditPlan(variations=[{
+        "key": "mix",
+        "clips": [{"source": 0, "start": 0, "end": 6}, {"source": 1, "start": 2, "end": 9}, {"source": 5, "start": 0, "end": 4}],
+        "broll": [{"at": 0.2, "duration": 3, "query": "intro"}, {"at": 4, "duration": 9, "query": "city street"},
+                  {"at": 5, "duration": 2, "query": "overlapping"}, {"at": 12.5, "duration": 3, "query": "too late"}],
+        "music": {"track_id": "nope", "volume": 0.2},
+    }])
+    v = validate_plan(plan, [10, 10], {"t1"}).variations[0]
+    assert [c.source for c in v.clips] == [0, 1]  # unknown source dropped
+    assert v.music is None  # unknown track dropped
+    assert v.broll[0].at >= 1.0  # hook protected
+    assert all(b.duration <= 5 for b in v.broll)
+    ends = [b.at + b.duration for b in v.broll]
+    assert all(e <= v.duration for e in ends)
+    assert all(b2.at >= e1 for e1, b2 in zip(ends, v.broll[1:]))  # no overlaps
+
+
+def test_pexels_search_picks_portrait_file(monkeypatch):
+    from app.ai.stock import search_pexels
+
+    monkeypatch.setattr(get_settings(), "pexels_api_key", "pk")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["Authorization"] == "pk"
+        assert request.url.params["orientation"] == "portrait"
+        return httpx.Response(200, json={"videos": [
+            {"id": 1, "duration": 1, "video_files": []},
+            {"id": 2, "duration": 12, "url": "https://www.pexels.com/video/2/", "user": {"name": "Ana", "url": "u"},
+             "video_files": [
+                 {"file_type": "video/mp4", "link": "https://x/4k.mp4", "width": 2160, "height": 3840},
+                 {"file_type": "video/mp4", "link": "https://x/hd.mp4", "width": 1080, "height": 1920},
+                 {"file_type": "video/mp4", "link": "https://x/sd.mp4", "width": 540, "height": 960},
+             ]},
+        ]})
+
+    clip = search_pexels("barber", min_duration=3, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    assert clip is not None and clip.id == "2" and clip.file_url == "https://x/hd.mp4"
+    assert clip.credit()["author"] == "Ana"

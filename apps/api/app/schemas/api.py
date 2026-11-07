@@ -91,6 +91,7 @@ class MediaOut(ORM):
     width: int | None
     height: int | None
     has_audio: bool
+    meta: dict = {}
     created_at: datetime
     url: str | None = None
     thumbnail_url: str | None = None
@@ -99,7 +100,10 @@ class MediaOut(ORM):
 # --- Jobs -----------------------------------------------------------------
 
 class JobIn(BaseModel):
-    source_asset_id: uuid.UUID
+    source_asset_id: uuid.UUID | None = None
+    source_asset_ids: list[uuid.UUID] = Field(default_factory=list, max_length=8)
+    music: str = Field(default="auto", max_length=60)  # auto | none | <track id>
+    broll: bool = True
     brand_id: uuid.UUID | None = None
     topic: str = Field(default="", max_length=300)
     goal: str = Field(default="", max_length=1000)
@@ -175,6 +179,7 @@ class JobDetail(JobOut):
     events: list[JobEventOut] = []
     outputs: list[OutputOut] = []
     source_media: MediaOut | None = None
+    sources_media: list[MediaOut] = []
     project_name: str = ""
 
 

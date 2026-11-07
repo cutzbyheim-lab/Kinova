@@ -57,14 +57,25 @@ export const api = {
   jobs: (projectId?: string) => request<Job[]>(`/api/jobs${projectId ? `?project_id=${projectId}` : ""}`),
   job: (id: string) => request<JobDetail>(`/api/jobs/${id}`),
   createJob: (projectId: string, body: {
-    source_asset_id: string; brand_id?: string | null; topic?: string; goal?: string; platform?: string; variations?: number;
+    source_asset_ids: string[]; brand_id?: string | null; topic?: string; goal?: string; platform?: string;
+    variations?: number; music?: string; broll?: boolean;
   }) => request<JobDetail>(`/api/projects/${projectId}/jobs`, json("POST", body)),
   retryJob: (id: string) => request<JobDetail>(`/api/jobs/${id}/retry`, json("POST")),
   rerunJob: (id: string) => request<JobDetail>(`/api/jobs/${id}/rerun`, json("POST")),
 
+  music: () => request<Media[]>("/api/music"),
+
   outputs: (projectId?: string) => request<Output[]>(`/api/outputs${projectId ? `?project_id=${projectId}` : ""}`),
   updateOutput: (id: string, o: Partial<Output>) => request<Output>(`/api/outputs/${id}`, json("PATCH", o)),
 };
+
+export async function uploadMusic(file: File, title: string, mood: string): Promise<Media> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("title", title);
+  form.append("mood", mood);
+  return request<Media>("/api/music", { method: "POST", body: form });
+}
 
 /** Upload with real progress (fetch can't report upload progress). */
 export function uploadMedia(projectId: string, file: File, onProgress: (pct: number) => void): Promise<Media> {

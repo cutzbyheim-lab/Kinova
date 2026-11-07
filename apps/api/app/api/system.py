@@ -45,6 +45,7 @@ def system_status(db: Session = Depends(get_db), ctx: RequestContext = Depends(g
                 "env": "ANTHROPIC_API_KEY",
             },
             "youtube": {"configured": s.youtube_configured, "region": s.youtube_region, "env": "YOUTUBE_API_KEY"},
+            "pexels": {"configured": s.pexels_configured, "env": "PEXELS_API_KEY"},
             "whisper": {"configured": s.whisper_enabled, "model": s.whisper_model, "env": "WHISPER_ENABLED"},
         },
         "limits": {
@@ -62,7 +63,8 @@ def overview(db: Session = Depends(get_db), ctx: RequestContext = Depends(get_ct
     count = lambda stmt: db.scalar(stmt) or 0  # noqa: E731
     stats = {
         "projects": count(select(func.count()).where(Project.org_id == org, Project.status == "active")),
-        "uploads": count(select(func.count()).where(MediaAsset.org_id == org)),
+        "uploads": count(select(func.count()).where(MediaAsset.org_id == org, MediaAsset.kind != "audio")),
+        "music_tracks": count(select(func.count()).where(MediaAsset.org_id == org, MediaAsset.kind == "audio")),
         "clips_ready": count(select(func.count()).where(GeneratedAsset.org_id == org, GeneratedAsset.status == "ready")),
         "clips_approved": count(select(func.count()).where(GeneratedAsset.org_id == org, GeneratedAsset.approved.is_(True))),
         "jobs_running": count(select(func.count()).where(
@@ -71,7 +73,7 @@ def overview(db: Session = Depends(get_db), ctx: RequestContext = Depends(get_ct
         "ai_spend_month_usd": float(db.scalar(select(func.coalesce(func.sum(AIGeneration.cost_usd), 0)).where(
             AIGeneration.org_id == org, AIGeneration.created_at >= month_start)) or 0),
         "footage_minutes": round(float(db.scalar(select(func.coalesce(func.sum(MediaAsset.duration_s), 0)).where(
-            MediaAsset.org_id == org)) or 0) / 60, 1),
+            MediaAsset.org_id == org, MediaAsset.kind == "video")) or 0) / 60, 1),
     }
     active = db.scalar(
         select(ProductionJob).where(ProductionJob.org_id == org, ProductionJob.status.in_(["queued", "running"]))

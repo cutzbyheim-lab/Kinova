@@ -14,7 +14,8 @@ Interactive docs: <http://localhost:8000/docs> (OpenAPI). All routes are scoped 
 | POST | `/api/projects/{id}/media` | Multipart upload (`file`); validated by content |
 | GET | `/api/media` | Library of uploads (`?project_id=&kind=&q=`) |
 | GET / DELETE | `/api/media/{id}` | Read / delete an original (and its productions' files) |
-| POST | `/api/projects/{id}/jobs` | Start a production `{source_asset_id, topic, goal, platform, variations, brand_id}` |
+| POST | `/api/projects/{id}/jobs` | Start a production `{source_asset_ids[], topic, goal, platform, variations, brand_id, music: auto\|none\|<track id>, broll}` |
+| GET / POST | `/api/music` | List / add licensed music tracks (multipart `file`, `title`, `mood`) |
 | GET | `/api/jobs` | Production log (`?project_id=`) |
 | GET | `/api/jobs/{id}` | Job with events, outputs, plan summary, trends, warnings |
 | POST | `/api/jobs/{id}/retry` | Resume a failed/partial job (finished stages are kept) |

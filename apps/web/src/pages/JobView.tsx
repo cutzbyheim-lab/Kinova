@@ -8,32 +8,51 @@ import { api } from "../lib/api";
 import { STAGE_LABELS, fmtDuration, fmtMoney, timeAgo } from "../lib/format";
 import type { JobDetail, Output } from "../lib/types";
 
-const VAR_COLORS = ["#FF6A2B", "#9A80FF", "#F4EDE4"];
+const SOURCE_COLORS = ["#FF6A2B", "#9A80FF", "#F4EDE4", "#8FD694", "#F2C14E", "#FF7A6B", "#7FC8F8", "#D6CCC2"];
 
-function CutMap({ job }: { job: JobDetail }) {
-  const total = job.source?.duration ?? job.source_media?.duration_s ?? 0;
-  if (!total || job.outputs.length === 0) return null;
+function CutBuild({ job }: { job: JobDetail }) {
+  const outs = job.outputs.filter((o) => o.edit_plan.clips?.length);
+  if (!outs.length) return null;
+  const names = job.sources_media.map((m) => m.filename);
   return (
     <div className="card flex flex-col gap-4 p-6">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="m-0 text-[16px] font-semibold text-mute">Where each cut comes from</h3>
-        <span className="font-mono text-[12px] text-dim">source · {fmtDuration(total)}</span>
-      </div>
-      <div className="flex flex-col gap-2.5">
-        {job.outputs.map((o, i) => (
-          <div key={o.id} className="flex items-center gap-3">
-            <span className="serif-i w-20 shrink-0 text-[17px] capitalize" style={{ color: VAR_COLORS[i % 3] }}>{o.style}</span>
-            <div className="relative h-6 flex-1 rounded-md bg-panel-3" role="img"
-              aria-label={`${o.style} uses ${o.edit_plan.clips?.map((c) => `${fmtDuration(c.start)}–${fmtDuration(c.end)}`).join(", ")}`}>
-              {o.edit_plan.clips?.map((c, k) => (
-                <span key={k} className="absolute top-0 h-full rounded-[4px]"
-                  style={{ left: `${(c.start / total) * 100}%`, width: `${Math.max(((c.end - c.start) / total) * 100, 0.6)}%`, background: VAR_COLORS[i % 3] }} />
-              ))}
+      <h3 className="m-0 text-[16px] font-semibold text-mute">How each cut is built</h3>
+      {names.length > 1 && (
+        <ul className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-[12px] text-dim">
+          {names.map((n, i) => (
+            <li key={i} className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm" style={{ background: SOURCE_COLORS[i % SOURCE_COLORS.length] }} aria-hidden />
+              <span className="max-w-[140px] truncate">{n}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex flex-col gap-3">
+        {outs.map((o) => {
+          const clips = o.edit_plan.clips ?? [];
+          const total = clips.reduce((t, c) => t + (c.end - c.start), 0) || 1;
+          const desc = clips.map((c) => `${names[c.source ?? 0] ?? "clip"} ${fmtDuration(c.start)}–${fmtDuration(c.end)}`).join(", ");
+          return (
+            <div key={o.id} className="flex items-center gap-3">
+              <span className="serif-i w-20 shrink-0 text-[17px] capitalize text-cream">{o.style}</span>
+              <div className="relative flex-1">
+                <div className="flex h-6 gap-[2px] overflow-hidden rounded-md" role="img" aria-label={`${o.style}: ${desc}`}>
+                  {clips.map((c, k) => (
+                    <span key={k} className="h-full" title={`${names[c.source ?? 0] ?? ""} ${fmtDuration(c.start)}–${fmtDuration(c.end)}`}
+                      style={{ flex: `${c.end - c.start} 0 0`, background: SOURCE_COLORS[(c.source ?? 0) % SOURCE_COLORS.length] }} />
+                  ))}
+                </div>
+                {o.edit_plan.broll?.map((b, k) => (
+                  <span key={k} title={`B-roll: ${b.query}`} className="absolute -top-1.5 h-1.5 rounded-full bg-cream/80"
+                    style={{ left: `${(b.at / total) * 100}%`, width: `${(b.duration / total) * 100}%` }} />
+                ))}
+              </div>
+              <span className="w-10 shrink-0 text-right font-mono text-[11px] text-dim">{fmtDuration(total)}</span>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
-      <div className="flex justify-between font-mono text-[11px] text-faint"><span>0:00</span><span>{fmtDuration(total / 2)}</span><span>{fmtDuration(total)}</span></div>
+      <p className="m-0 text-[12px] text-faint">Colored blocks are the clips used, in order{outs.some((o) => o.edit_plan.broll?.length) ? "; thin bars above mark stock B-roll" : ""}.</p>
     </div>
   );
 }
@@ -111,6 +130,20 @@ function OutputCard({ o, index }: { o: Output; index: number }) {
           <input id={`h-${o.id}`} className="field text-[14px]" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="#example #tags" />
         </div>
         {o.cta && <p className="m-0 text-[13px] text-mute"><span className="font-semibold text-cream">CTA:</span> {o.cta}</p>}
+        {(o.edit_plan.music_title || (o.edit_plan.credits?.length ?? 0) > 0) && (
+          <div className="flex flex-col gap-1 rounded-xl bg-panel-2 p-3 text-[12px] text-dim">
+            {o.edit_plan.music_title && <span><span className="font-semibold text-cream">♪ Music:</span> {o.edit_plan.music_title}</span>}
+            {(o.edit_plan.credits?.length ?? 0) > 0 && (
+              <span>
+                <span className="font-semibold text-cream">B-roll:</span> videos from{" "}
+                <a href="https://www.pexels.com" target="_blank" rel="noreferrer" className="font-semibold text-cream">Pexels</a> by{" "}
+                {o.edit_plan.credits!.map((cr, k) => (
+                  <span key={k}>{k > 0 && ", "}<a href={cr.page_url} target="_blank" rel="noreferrer">{cr.author || "creator"}</a></span>
+                ))}
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="mt-auto flex flex-wrap gap-2 pt-2">
           {dirty && (
@@ -227,7 +260,7 @@ export default function JobView() {
             )}
           </div>
 
-          <CutMap job={j} />
+          <CutBuild job={j} />
 
           {j.trends && j.trends.sample_size > 0 && (
             <div className="card flex flex-col gap-3 p-6">

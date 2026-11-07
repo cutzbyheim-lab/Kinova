@@ -35,6 +35,8 @@ def job_detail(db: Session, job: ProductionJob) -> JobDetail:
     )]
     src = db.get(MediaAsset, job.source_asset_id)
     detail.source_media = media_out(src) if src else None
+    ids = job.settings.get("source_asset_ids") or [str(job.source_asset_id)]
+    detail.sources_media = [media_out(m) for m in (db.get(MediaAsset, uuid.UUID(i)) for i in ids) if m]
     proj = db.get(Project, job.project_id)
     detail.project_name = proj.name if proj else ""
     return detail
@@ -43,18 +45,32 @@ def job_detail(db: Session, job: ProductionJob) -> JobDetail:
 @router.post("/api/projects/{project_id}/jobs", response_model=JobDetail, status_code=201)
 def create_job(project_id: uuid.UUID, body: JobIn, db: Session = Depends(get_db), ctx: RequestContext = Depends(get_ctx)):
     project = get_owned(db, Project, project_id, ctx)
-    asset = get_owned(db, MediaAsset, body.source_asset_id, ctx)
-    if asset.project_id != project.id:
-        raise HTTPException(400, "That footage belongs to a different project.")
-    if asset.kind != "video":
-        raise HTTPException(400, "Production needs a video. Images are supported as brand assets.")
+    ids = list(dict.fromkeys(body.source_asset_ids or ([body.source_asset_id] if body.source_asset_id else [])))
+    if not ids:
+        raise HTTPException(400, "Choose at least one video.")
+    assets = []
+    for aid in ids:
+        asset = get_owned(db, MediaAsset, aid, ctx)
+        if asset.project_id != project.id:
+            raise HTTPException(400, f"“{asset.filename}” belongs to a different project.")
+        if asset.kind != "video":
+            raise HTTPException(400, f"“{asset.filename}” isn't a video.")
+        assets.append(asset)
+    if body.music not in ("auto", "none"):
+        try:
+            track = get_owned(db, MediaAsset, uuid.UUID(body.music), ctx)
+        except ValueError:
+            raise HTTPException(400, "Unknown music choice.") from None
+        if track.kind != "audio":
+            raise HTTPException(400, "That music choice isn't an audio track.")
     brand_id = body.brand_id or project.brand_id
     if brand_id:
         get_owned(db, Brand, brand_id, ctx)
     job = ProductionJob(
-        org_id=ctx.org_id, project_id=project.id, source_asset_id=asset.id, brand_id=brand_id,
+        org_id=ctx.org_id, project_id=project.id, source_asset_id=assets[0].id, brand_id=brand_id,
         settings={"topic": body.topic or project.topic, "goal": body.goal,
-                  "platform": body.platform, "variations": body.variations},
+                  "platform": body.platform, "variations": body.variations,
+                  "source_asset_ids": [str(a.id) for a in assets], "music": body.music, "broll": body.broll},
         result={},
     )
     db.add(job)

@@ -4,7 +4,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -24,7 +24,9 @@ router = APIRouter(tags=["media"])
 
 VIDEO_EXT = {".mp4": "video/mp4", ".mov": "video/quicktime", ".m4v": "video/mp4", ".webm": "video/webm", ".mkv": "video/x-matroska"}
 IMAGE_EXT = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
+AUDIO_EXT = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4", ".aac": "audio/aac", ".ogg": "audio/ogg", ".flac": "audio/flac"}
 CHUNK = 1024 * 1024
+MAX_TRACK_MB = 60
 
 
 def _safe_name(name: str) -> str:
@@ -119,9 +121,66 @@ def list_media(
         stmt = stmt.where(MediaAsset.project_id == project_id)
     if kind:
         stmt = stmt.where(MediaAsset.kind == kind)
+    else:
+        stmt = stmt.where(MediaAsset.kind != "audio")
     if q:
         stmt = stmt.where(MediaAsset.filename.ilike(f"%{q}%"))
     return [media_out(m) for m in db.scalars(stmt.order_by(MediaAsset.created_at.desc()).limit(500))]
+
+
+@router.post("/api/music", response_model=MediaOut, status_code=201)
+async def upload_music(
+    file: UploadFile,
+    title: str = Form(default="", max_length=120),
+    mood: str = Form(default="", max_length=120),
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_ctx),
+):
+    """Add a track you have the rights to use. The AI picks from this library by mood."""
+    name = _safe_name(file.filename or "track")
+    ext = Path(name).suffix
+    if ext not in AUDIO_EXT:
+        raise HTTPException(415, "Use an MP3, WAV, M4A, AAC, OGG or FLAC file.")
+    storage = get_storage()
+    tmp_dir = storage.path("tmp")
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    sha = hashlib.sha256()
+    size = 0
+    with tempfile.NamedTemporaryFile(dir=tmp_dir, suffix=ext, delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+        while chunk := await file.read(CHUNK):
+            size += len(chunk)
+            if size > MAX_TRACK_MB * CHUNK:
+                tmp.close()
+                tmp_path.unlink(missing_ok=True)
+                raise HTTPException(413, f"Tracks can be up to {MAX_TRACK_MB} MB.")
+            sha.update(chunk)
+            tmp.write(chunk)
+    try:
+        p = probe(tmp_path)
+    except MediaError:
+        tmp_path.unlink(missing_ok=True)
+        raise HTTPException(422, "That file couldn't be read as audio.") from None
+    if not p.has_audio or p.duration <= 0:
+        tmp_path.unlink(missing_ok=True)
+        raise HTTPException(422, "No audio found in that file.")
+    asset = MediaAsset(
+        id=uuid.uuid4(), org_id=ctx.org_id, project_id=None, kind="audio", filename=name,
+        content_type=AUDIO_EXT[ext], size_bytes=size, sha256=sha.hexdigest(), storage_key="",
+        duration_s=p.duration, has_audio=True,
+        meta={"title": title.strip() or Path(name).stem.replace("-", " "), "mood": mood.strip()},
+    )
+    asset.storage_key = storage.put_file(source_key(ctx.org_id, asset.id, name), tmp_path, move=True)
+    db.add(asset)
+    audit(db, ctx, "music.upload", "media", asset.id, filename=name)
+    db.commit()
+    return media_out(asset)
+
+
+@router.get("/api/music", response_model=list[MediaOut])
+def list_music(db: Session = Depends(get_db), ctx: RequestContext = Depends(get_ctx)):
+    stmt = select(MediaAsset).where(MediaAsset.org_id == ctx.org_id, MediaAsset.kind == "audio")
+    return [media_out(m) for m in db.scalars(stmt.order_by(MediaAsset.created_at.desc()))]
 
 
 @router.get("/api/media/{asset_id}", response_model=MediaOut)

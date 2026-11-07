@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     youtube_api_key: str = ""
     youtube_region: str = "US"
 
+    # Stock B-roll (free, commercial use OK, credit appreciated)
+    pexels_api_key: str = ""
+
     # Whisper
     whisper_enabled: bool = True
     whisper_model: str = "base"
@@ -49,6 +52,10 @@ class Settings(BaseSettings):
     @property
     def anthropic_configured(self) -> bool:
         return bool(self.anthropic_api_key.strip())
+
+    @property
+    def pexels_configured(self) -> bool:
+        return bool(self.pexels_api_key.strip())
 
     @property
     def youtube_configured(self) -> bool:

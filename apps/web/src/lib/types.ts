@@ -44,6 +44,7 @@ export interface Media {
   width: number | null;
   height: number | null;
   has_audio: boolean;
+  meta: { title?: string; mood?: string } & Record<string, unknown>;
   created_at: string;
   url: string | null;
   thumbnail_url: string | null;
@@ -68,7 +69,15 @@ export interface Output {
   caption: string;
   hashtags: string[];
   cta: string;
-  edit_plan: { reason?: string; hook_text?: string; clips?: { start: number; end: number }[] };
+  edit_plan: {
+    reason?: string;
+    hook_text?: string;
+    clips?: { source?: number; start: number; end: number }[];
+    broll?: { at: number; duration: number; query: string }[];
+    sources?: string[];
+    credits?: { provider: string; page_url: string; author: string; author_url: string; query: string }[];
+    music_title?: string | null;
+  };
   qc: { passed?: boolean; checks?: QcCheck[]; error?: string };
   created_at: string;
   url: string | null;
@@ -97,7 +106,10 @@ export interface Job {
   status: JobStatus;
   stage: string | null;
   progress: number;
-  settings: { topic?: string; goal?: string; platform?: string; variations?: number };
+  settings: {
+    topic?: string; goal?: string; platform?: string; variations?: number;
+    source_asset_ids?: string[]; music?: string; broll?: boolean;
+  };
   error: string | null;
   cost_usd: number;
   attempts: number;
@@ -118,6 +130,7 @@ export interface JobDetail extends Job {
   events: JobEvent[];
   outputs: Output[];
   source_media: Media | null;
+  sources_media: Media[];
   project_name: string;
 }
 
@@ -128,6 +141,7 @@ export interface SystemStatus {
   integrations: {
     claude: { configured: boolean; models: { fast: string; smart: string }; env: string };
     youtube: { configured: boolean; region: string; env: string };
+    pexels: { configured: boolean; env: string };
     whisper: { configured: boolean; model: string; env: string };
   };
   limits: { max_upload_mb: number; max_video_seconds: number; max_job_cost_usd: number };
@@ -137,6 +151,7 @@ export interface Overview {
   stats: {
     projects: number;
     uploads: number;
+    music_tracks: number;
     clips_ready: number;
     clips_approved: number;
     jobs_running: number;

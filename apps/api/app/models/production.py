@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.db import Base
 from app.models.base import IdMixin, OrgScopedMixin, TimestampMixin, utcnow
 
-STAGES = ["ingest", "transcribe", "trends", "plan", "render", "qc", "copy", "deliver"]
+STAGES = ["ingest", "transcribe", "trends", "plan", "assets", "render", "qc", "copy", "deliver"]
 
 
 class ProductionJob(IdMixin, TimestampMixin, OrgScopedMixin, Base):

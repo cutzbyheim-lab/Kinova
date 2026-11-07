@@ -31,8 +31,9 @@ CPU-bound on a laptop.
 | ingest | probe source, extract 16 kHz mono audio | fatal: unreadable file |
 | transcribe | faster-whisper (CPU, int8), word timestamps | skipped → cuts without speech |
 | trends | YouTube search (top viewed, last 30 days) + video details → pattern summary | skipped → plan without trends |
-| plan | Claude Sonnet → JSON `EditPlan`; validated, one repair attempt | non-AI heuristic, labelled |
-| render | per-clip segments → lossless concat → captions (ASS/libass) + loudness | retry without captions |
+| plan | Claude Sonnet → JSON `EditPlan` across all sources (clips, B-roll slots, music pick); validated, one repair attempt | non-AI heuristic, labelled |
+| assets | search + download Pexels portrait clips for each B-roll slot (cached per org), resolve music tracks | skipped / warning, cut renders without them |
+| render | per-clip segments (any source) → lossless concat → B-roll overlays, captions (ASS/libass), music with sidechain ducking, loudness | retry without captions/B-roll/music |
 | qc | dimensions, duration, audio, A/V drift, caption cues | re-render once, else mark failed |
 | copy | Claude Haiku → title, hook, caption, hashtags, CTA | skipped, working titles kept |
 | deliver | final status: succeeded / partial / failed | — |

@@ -56,3 +56,52 @@ def test_rerun_creates_new_job(client, sample_video):
     assert second["id"] != first["id"]
     assert second["status"] == "succeeded"
     assert len(client.get(f"/api/jobs?project_id={p['id']}").json()) == 2
+
+
+def test_multi_clip_production_with_music(client, sample_video, tmp_path):
+    import subprocess
+
+    track = tmp_path / "chill-beat.mp3"
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=520:duration=8",
+                    "-c:a", "libmp3lame", str(track)], check=True)
+    with open(track, "rb") as f:
+        r = client.post("/api/music", files={"file": ("chill-beat.mp3", f, "audio/mpeg")}, data={"mood": "chill"})
+    assert r.status_code == 201, r.text
+    music = r.json()
+    assert music["meta"] == {"title": "chill beat", "mood": "chill"}
+    assert [m["id"] for m in client.get("/api/music").json()] == [music["id"]]
+
+    p = make_project(client)
+    a = upload(client, p["id"], sample_video, "take-1.mp4")
+    b = upload(client, p["id"], sample_video, "take-2.mp4")
+    assert all(m["kind"] != "audio" for m in client.get("/api/media").json())
+
+    r = client.post(f"/api/projects/{p['id']}/jobs", json={
+        "source_asset_ids": [a["id"], b["id"]], "music": "auto", "broll": True, "variations": 2})
+    assert r.status_code == 201, r.text
+    job = client.get(f"/api/jobs/{r.json()['id']}").json()
+    assert job["status"] == "succeeded", job
+    assert len(job["sources_media"]) == 2
+    assert "2 clips" in next(e["message"] for e in job["events"] if e["stage"] == "ingest" and e["status"] == "done")
+    # story uses both sources
+    story = next(o for o in job["outputs"] if o["variation_key"] == "story")
+    assert {c["source"] for c in story["edit_plan"]["clips"]} == {0, 1}
+    assert story["edit_plan"]["music_title"] == "chill beat"
+    # B-roll requested but Pexels not connected → honest warning, no fake footage
+    assert any("Pexels is not connected" in w for w in job["warnings"])
+    assert all(o["edit_plan"]["credits"] == [] for o in job["outputs"])
+
+
+def test_job_rejects_audio_as_footage(client, sample_video, tmp_path):
+    import subprocess
+
+    track = tmp_path / "t.mp3"
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "sine=duration=3", str(track)], check=True)
+    with open(track, "rb") as f:
+        music = client.post("/api/music", files={"file": ("t.mp3", f, "audio/mpeg")}).json()
+    p = make_project(client)
+    v = upload(client, p["id"], sample_video)
+    r = client.post(f"/api/projects/{p['id']}/jobs", json={"source_asset_ids": [v["id"], music["id"]]})
+    assert r.status_code == 400
+    r = client.post(f"/api/projects/{p['id']}/jobs", json={"source_asset_ids": [v["id"]], "music": v["id"]})
+    assert r.status_code == 400

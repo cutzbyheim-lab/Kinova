@@ -42,6 +42,7 @@ Everything works without keys — KINOVA just tells you clearly what it skipped.
 |---|---|---|---|
 | `ANTHROPIC_API_KEY` | Claude picks the moments, plans each cut, writes copy | <https://platform.claude.com/> → API Keys | Pay per use; capped per production by `MAX_JOB_COST_USD` (default $0.50) |
 | `YOUTUBE_API_KEY` | Trend research for your topic | Google Cloud Console → enable **YouTube Data API v3** → Credentials → API key | Free (10,000 units/day ≈ 99 productions) |
+| `PEXELS_API_KEY` | Stock B-roll cutaways placed by the AI | <https://www.pexels.com/api/> → free account → "Your API Key" | Free (commercial use allowed; creators are credited) |
 | `WHISPER_ENABLED` | Speech-to-text (captions, moment picking) | Already on — runs locally | Free |
 
 Save the file.
@@ -78,10 +79,11 @@ The first build downloads a few GB and takes 5–15 minutes. When you see `Uvico
 ## How it works
 
 ```
-Upload ─► Ingest ─► Transcribe ─► Trends ─► Moments ─► Render ─► Quality check ─► Copy ─► Library
-          ffprobe    Whisper       YouTube    Claude      FFmpeg     ffprobe checks   Claude
-          audio      (local)       Data API   Sonnet      9:16 +     size, length,    Haiku
-                                              → JSON plan captions   audio, A/V sync
+Upload(s) ─► Ingest ─► Transcribe ─► Trends ─► Moments ─► B-roll & music ─► Render ─► QC ─► Copy ─► Library
+             ffprobe    Whisper       YouTube    Claude      Pexels stock +     FFmpeg     checks  Claude
+             audio      (local)       Data API   Sonnet      your music         9:16 +             Haiku
+                                                 → JSON plan library            captions,
+                                                                                ducked music
 ```
 
 - **The AI never writes FFmpeg commands.** Claude returns a JSON editing plan; it is validated and clamped to the
@@ -92,6 +94,10 @@ Upload ─► Ingest ─► Transcribe ─► Trends ─► Moments ─► Rende
   Every call is logged with real token usage (`ai_generations` table).
 - **Resumable.** Each stage records its output. Retrying a failed job resumes where it stopped — no re-paying for
   finished work.
+- **Several clips, one video.** Upload up to 8 takes; Claude cuts across all of them.
+- **Only licensed media.** B-roll comes from Pexels (free for commercial use, creators credited); music comes from
+  your own library of tracks you have the rights to. KINOVA does not download from YouTube, Apple Music or Spotify —
+  that breaks their terms and gets posted videos muted or removed.
 - **Originals are never touched.** Source uploads, derived files (audio, transcripts) and generated clips live in
   separate storage areas; private files are served only through expiring signed links.
 
