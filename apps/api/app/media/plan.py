@@ -28,6 +28,10 @@ class Clip(BaseModel):
     source: int = Field(default=0, ge=0)
     start: float = Field(ge=0)
     end: float = Field(gt=0)
+    # Where the subject sits horizontally (0 = left edge, 1 = right) — keeps them in the 9:16 crop.
+    focus_x: float = Field(default=0.5, ge=0, le=1)
+    # Punch-in: 1.0 = full frame, up to 1.35 = tight. Alternating zooms give jump cuts energy.
+    zoom: float = Field(default=1.0, ge=1.0, le=1.35)
 
 
 class BRoll(BaseModel):
@@ -50,6 +54,7 @@ class Variation(BaseModel):
     hook_text: str = Field(default="", max_length=80)
     reason: str = Field(default="", max_length=600)
     subtitle_position: str = "center"  # center | bottom
+    cta_text: str = Field(default="", max_length=28)
     clips: list[Clip] = Field(min_length=1, max_length=MAX_CLIPS)
     broll: list[BRoll] = Field(default_factory=list, max_length=10)
     music: Music | None = None
@@ -115,7 +120,7 @@ def validate_plan(
             start = max(0.0, min(c.start, dur))
             end = max(0.0, min(c.end, dur))
             if end - start >= MIN_CLIP_S:
-                clips.append(Clip(source=c.source, start=round(start, 2), end=round(end, 2)))
+                clips.append(c.model_copy(update={"start": round(start, 2), "end": round(end, 2)}))
         if not clips:
             continue
         total = sum(c.end - c.start for c in clips)
@@ -123,7 +128,7 @@ def validate_plan(
             over = total - MAX_TOTAL_S
             last = clips[-1]
             if last.end - last.start - over >= MIN_CLIP_S:
-                clips[-1] = Clip(source=last.source, start=last.start, end=round(last.end - over, 2))
+                clips[-1] = last.model_copy(update={"end": round(last.end - over, 2)})
             else:
                 clips.pop()
             total = sum(c.end - c.start for c in clips)

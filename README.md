@@ -43,6 +43,7 @@ Everything works without keys — KINOVA just tells you clearly what it skipped.
 | `ANTHROPIC_API_KEY` | Claude picks the moments, plans each cut, writes copy | <https://platform.claude.com/> → API Keys | Pay per use; capped per production by `MAX_JOB_COST_USD` (default $0.50) |
 | `YOUTUBE_API_KEY` | Trend research for your topic | Google Cloud Console → enable **YouTube Data API v3** → Credentials → API key | Free (10,000 units/day ≈ 99 productions) |
 | `PEXELS_API_KEY` | Stock B-roll cutaways placed by the AI | <https://www.pexels.com/api/> → free account → "Your API Key" | Free (commercial use allowed; creators are credited) |
+| `MOTION_ENABLED` | Animated captions, hook titles, B-roll entrances, CTA (Remotion) | On by default — built into the Docker image | Free for teams of up to 3 people ([Remotion license](https://www.remotion.dev/docs/license/faq)); 4+ people need "Remotion for Automators" ($0.01/render, $100/month minimum) |
 | `WHISPER_ENABLED` | Speech-to-text (captions, moment picking) | Already on — runs locally | Free |
 
 Save the file.
@@ -60,6 +61,9 @@ The first build downloads a few GB and takes 5–15 minutes. When you see `Uvico
 - Start again later: `docker compose up` (no `--build` needed unless the code changed).
 - After editing `.env`: `docker compose up -d` to restart with the new keys.
 - Update to the latest code: `git pull` then `docker compose up --build`.
+
+> **Render time:** with motion graphics on, each 30-second cut takes about 1–2 minutes on a typical laptop.
+> Set `MOTION_ENABLED=false` in `.env` for the faster, simpler look.
 
 > **First production note:** the first time Whisper runs it downloads its model (~150 MB for `base`).
 > That production sits on "Transcribe" for a few minutes. Later ones start immediately.
@@ -94,6 +98,11 @@ Upload(s) ─► Ingest ─► Transcribe ─► Trends ─► Moments ─► B-
   Every call is logged with real token usage (`ai_generations` table).
 - **Resumable.** Each stage records its output. Retrying a failed job resumes where it stopped — no re-paying for
   finished work.
+- **Claude watches the footage.** Frames from every clip are tiled into labelled contact sheets and sent with the
+  transcript, so Claude picks visual moments too, keeps you centered in the vertical crop and punches in on jump cuts.
+- **Motion graphics.** A Remotion layer (rules from the bundled `remotion-motion-graphics` skill in `.claude/skills`)
+  adds word-by-word captions, an animated hook title, B-roll entrances and a call to action; FFmpeg adds the grade,
+  grain, vignette and sound effects. If the motion layer can't run, KINOVA falls back to the simpler FFmpeg look.
 - **Several clips, one video.** Upload up to 8 takes; Claude cuts across all of them.
 - **Only licensed media.** B-roll comes from Pexels (free for commercial use, creators credited); music comes from
   your own library of tracks you have the rights to. KINOVA does not download from YouTube, Apple Music or Spotify —

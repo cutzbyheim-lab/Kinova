@@ -14,6 +14,7 @@ os.environ.update({
     "ANTHROPIC_API_KEY": "",
     "YOUTUBE_API_KEY": "",
     "WHISPER_ENABLED": "false",
+    "MOTION_ENABLED": os.environ.get("TEST_MOTION", "false"),
     "SECRET_KEY": "test-secret",
 })
 

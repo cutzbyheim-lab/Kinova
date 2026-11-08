@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     # Stock B-roll (free, commercial use OK, credit appreciated)
     pexels_api_key: str = ""
 
+    # Motion-graphics layer (Remotion). Free for teams of up to 3 people; see README.
+    motion_enabled: bool = True
+    motion_dir: str = ""
+    motion_concurrency: int = 0  # 0 = half the CPU cores (max 4)
+    chrome_executable: str = ""  # empty = Remotion's own headless Chrome
+
     # Whisper
     whisper_enabled: bool = True
     whisper_model: str = "base"

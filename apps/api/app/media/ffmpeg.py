@@ -23,9 +23,9 @@ class ProbeResult:
     raw: dict = field(default_factory=dict)
 
 
-def run(args: list[str], timeout: int = 1800, cwd: Path | None = None) -> subprocess.CompletedProcess:
+def run(args: list[str], timeout: int = 1800, cwd: Path | None = None, env: dict | None = None) -> subprocess.CompletedProcess:
     try:
-        proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout, cwd=cwd)
+        proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout, cwd=cwd, env=env)
     except subprocess.TimeoutExpired as e:
         raise MediaError(f"{args[0]} timed out after {timeout}s") from e
     if proc.returncode != 0:

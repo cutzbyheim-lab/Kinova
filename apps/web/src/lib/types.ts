@@ -142,6 +142,7 @@ export interface SystemStatus {
     claude: { configured: boolean; models: { fast: string; smart: string }; env: string };
     youtube: { configured: boolean; region: string; env: string };
     pexels: { configured: boolean; env: string };
+    motion: { configured: boolean; detail: string; env: string };
     whisper: { configured: boolean; model: string; env: string };
   };
   limits: { max_upload_mb: number; max_video_seconds: number; max_job_cost_usd: number };

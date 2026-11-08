@@ -1,11 +1,26 @@
-import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, CircleDashed } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { CheckCircle2, CircleDashed, PlugZap } from "lucide-react";
 import type { ReactNode } from "react";
-import { ErrorState, PageHeader, Skeleton } from "../components/ui";
+import { Button, ErrorState, PageHeader, Skeleton } from "../components/ui";
 import { api } from "../lib/api";
 
-function Integration({ name, on, what, env, how, extra }:
-  { name: string; on: boolean; what: string; env: string; how: ReactNode; extra?: string }) {
+function ClaudeTest() {
+  const test = useMutation({ mutationFn: api.checkClaude });
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Button icon={<PlugZap size={16} aria-hidden />} busy={test.isPending} onClick={() => test.mutate()}>Test connection</Button>
+      {test.data && (
+        <span role="status" className={`text-[14px] ${test.data.ok ? "text-ok" : "text-danger"}`}>
+          {test.data.ok ? `Working — ${test.data.model} answered.` : test.data.error}
+        </span>
+      )}
+      {test.isError && <span role="status" className="text-[14px] text-danger">{(test.error as Error).message}</span>}
+    </div>
+  );
+}
+
+function Integration({ name, on, what, env, how, extra, children }:
+  { name: string; on: boolean; what: string; env: string; how: ReactNode; extra?: string; children?: ReactNode }) {
   return (
     <section className="card flex flex-col gap-4 p-6">
       <div className="flex items-center gap-3">
@@ -17,6 +32,7 @@ function Integration({ name, on, what, env, how, extra }:
       </div>
       <p className="m-0 text-[15px] leading-relaxed text-mute">{what}</p>
       {extra && <p className="m-0 font-mono text-[13px] text-dim">{extra}</p>}
+      {children}
       {!on && (
         <div className="rounded-2xl bg-panel-2 p-4 text-[14px] leading-relaxed text-mute">
           {how}
@@ -44,7 +60,13 @@ export default function Settings() {
           <Integration name="Claude" on={s.data.integrations.claude.configured} env="ANTHROPIC_API_KEY"
             what="Picks the moments, plans each cut, and writes titles, captions and hashtags in your brand voice."
             extra={`Routine work: ${s.data.integrations.claude.models.fast} · Editing plans: ${s.data.integrations.claude.models.smart} · Cap $${s.data.limits.max_job_cost_usd.toFixed(2)} per production`}
-            how={<p className="m-0">Create a key at <a href="https://platform.claude.com/" target="_blank" rel="noreferrer" className="font-semibold text-cream">platform.claude.com</a> → API Keys, and add a few dollars of credit.</p>} />
+            how={<p className="m-0">Create a key at <a href="https://platform.claude.com/" target="_blank" rel="noreferrer" className="font-semibold text-cream">platform.claude.com</a> → API Keys (it starts with <code className="font-mono text-cream">sk-ant-api</code>), and add a few dollars of credit.</p>}>
+            {s.data.integrations.claude.configured && <ClaudeTest />}
+          </Integration>
+          <Integration name="Motion graphics" on={!!s.data.integrations.motion?.configured} env="MOTION_ENABLED"
+            what="Animated word-by-word captions, hook titles, B-roll entrances and an on-screen call to action, rendered with Remotion in headless Chrome. Without it, cuts use the simpler FFmpeg look."
+            extra={s.data.integrations.motion?.configured ? "Ready" : `Unavailable: ${s.data.integrations.motion?.detail ?? "unknown"}`}
+            how={<p className="m-0">Rebuild KINOVA with <code className="font-mono text-cream">docker compose up --build</code>. If it still says unavailable, check that your computer could download headless Chrome during the build.</p>} />
           <Integration name="YouTube trends" on={s.data.integrations.youtube.configured} env="YOUTUBE_API_KEY"
             what="Looks up the most-viewed recent videos for your topic so every cut matches — or beats — what's working now. Free: 10,000 quota units a day (about 99 productions)."
             extra={`Region: ${s.data.integrations.youtube.region}`}

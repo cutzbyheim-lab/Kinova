@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai.copywriter import write_copy
-from app.ai.llm import BudgetExceeded, ClaudeLLM, NotConfigured, Usage
+from app.ai.llm import BudgetExceeded, ClaudeLLM, NotConfigured, Usage, explain_error
 from app.ai.planner import claude_plan, heuristic_plan
 from app.ai.stock import download, search_pexels
 from app.ai.transcription import TranscriptionUnavailable, get_transcriber
@@ -27,6 +27,7 @@ from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.logging import log
 from app.media.ffmpeg import MediaError, extract_audio, probe
+from app.media.frames import contact_sheets
 from app.media.plan import BRoll, EditPlan, Variation
 from app.media.qc import check_output
 from app.media.render import ASPECTS, Extras, Source, render_variation
@@ -82,6 +83,10 @@ class Ctx:
     def accent(self) -> str:
         colors = (self.brand.colors if self.brand else None) or []
         return colors[0] if colors else "#FF6A2B"
+
+    def accent2(self) -> str:
+        colors = (self.brand.colors if self.brand else None) or []
+        return colors[1] if len(colors) > 1 else "#9A80FF"
 
     def load_json(self, key: str | None) -> dict | None:
         if key and self.storage.exists(key):
@@ -228,24 +233,32 @@ def stage_plan(c: Ctx) -> str:
         c.warnings.append("B-roll skipped: Pexels is not connected (add PEXELS_API_KEY).")
     plan: EditPlan
     if c.settings.anthropic_configured:
+        sheets, step = [], None
+        try:
+            sheets, step = contact_sheets(
+                [(c.storage.path(a.storage_key), i["duration"]) for a, i in zip(c.sources, infos, strict=False)])
+        except MediaError as e:
+            c.warnings.append(f"Couldn't sample frames for Claude to look at ({e}); planning from speech only.")
         try:
             plan = claude_plan(
                 c.llm(), infos, transcripts, trends, c.brand_dict(),
                 c.job.settings.get("goal", ""), c.job.settings.get("platform", "TikTok"), n,
-                music_library=library, allow_broll=broll_ok,
+                music_library=library, allow_broll=broll_ok, sheets=sheets, sheet_step=step,
             )
+            c.set_result(frames_seen=len(sheets) * 16)
         except BudgetExceeded as e:
             plan = heuristic_plan(durations, transcripts, n, f"Cost cap reached ({e}); used non-AI fallback.", library)
             c.warnings.append(str(e))
         except Exception as e:
             plan = heuristic_plan(durations, transcripts, n,
-                                  f"Claude planning failed ({type(e).__name__}); used non-AI fallback.", library)
-            c.warnings.append(f"Claude planning failed: {e}")
+                                  f"Claude planning failed — {explain_error(e)} Used the non-AI fallback.", library)
+            c.warnings.append(f"Claude planning failed: {explain_error(e)}")
     else:
         plan = heuristic_plan(durations, transcripts, n,
                               "Claude is not connected (add ANTHROPIC_API_KEY); used non-AI fallback.", library)
     c.set_result(plan=plan.model_dump(), planner=plan.planner)
-    label = "Claude" if plan.planner == "claude" else "heuristic fallback (not AI)"
+    label = ("Claude" + (f" (watched {c.job.result.get('frames_seen', 0)} frames)" if c.job.result.get("frames_seen") else "")
+             if plan.planner == "claude" else "heuristic fallback (not AI)")
     extras = []
     if any(v.broll for v in plan.variations):
         extras.append(f"{sum(len(v.broll) for v in plan.variations)} B-roll shots")
@@ -320,8 +333,11 @@ def _extras_for(c: Ctx, var: Variation, with_extras: bool) -> Extras:
 
 def _render_one(c: Ctx, out: GeneratedAsset, var: Variation, transcripts: list, with_subs: bool, with_extras: bool = True) -> None:
     out_dir = c.storage.path(generated_key(c.job.org_id, c.job.id, "x")).parent
-    r = render_variation(c.render_sources(), var, transcripts, out_dir, accent=c.accent(),
-                         with_subtitles=with_subs, extras=_extras_for(c, var, with_extras))
+    r = render_variation(c.render_sources(), var, transcripts, out_dir, accent=c.accent(), accent2=c.accent2(),
+                         with_subtitles=with_subs, extras=_extras_for(c, var, with_extras),
+                         use_motion=with_extras and c.settings.motion_enabled)
+    if r.motion_error and with_extras:
+        c.warnings.append(f"{var.key}: motion graphics unavailable, used the simpler look ({r.motion_error[:300]})")
     out.storage_key = generated_key(c.job.org_id, c.job.id, r.video.name)
     out.thumbnail_key = generated_key(c.job.org_id, c.job.id, r.thumb.name)
     out.duration_s = r.duration
@@ -335,7 +351,8 @@ def _render_one(c: Ctx, out: GeneratedAsset, var: Variation, transcripts: list, 
                     for b in entry.get("broll", [])] if r.broll_used else [],
         "music_title": entry["music"]["title"] if r.music_used and entry.get("music") else None,
     }
-    out.qc = {"cue_count": r.cue_count, "with_subtitles": with_subs, "with_extras": with_extras}
+    out.qc = {"cue_count": r.cue_count, "with_subtitles": with_subs, "with_extras": with_extras,
+              "motion": r.motion_used}
 
 
 def stage_render(c: Ctx) -> str:
@@ -373,7 +390,8 @@ def stage_render(c: Ctx) -> str:
         c.event("render", "progress", f"Rendered {var.key}", {"variation": var.key, "status": out.status})
     if ok == 0:
         raise StageFatal("Every variation failed to render. See the details on each output.")
-    return f"{ok}/{len(plan.variations)} variations rendered"
+    look = "motion graphics" if any((o.qc or {}).get("motion") for o in c.outputs()) else "standard look"
+    return f"{ok}/{len(plan.variations)} variations rendered · {look}"
 
 
 def stage_qc(c: Ctx) -> str:

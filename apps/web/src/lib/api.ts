@@ -35,6 +35,7 @@ const json = (method: string, data?: unknown): RequestInit => ({ method, body: J
 export const api = {
   status: () => request<SystemStatus>("/api/system/status"),
   overview: () => request<Overview>("/api/overview"),
+  checkClaude: () => request<{ ok: boolean; model?: string; error?: string }>("/api/system/check-claude", json("POST")),
 
   brands: () => request<Brand[]>("/api/brands"),
   createBrand: (b: Partial<BrandInput>) => request<Brand>("/api/brands", json("POST", b)),

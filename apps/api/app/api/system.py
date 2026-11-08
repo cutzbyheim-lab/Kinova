@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.api.projects import project_out
 from app.api.serializers import job_out, output_out
+from app.ai.llm import ClaudeLLM, NotConfigured, explain_error
 from app.core.config import get_settings
+from app.media import motion
 from app.core.context import RequestContext, get_ctx
 from app.core.db import get_db
 from app.models import AIGeneration, Brand, GeneratedAsset, MediaAsset, Organization, ProductionJob, Project
@@ -46,6 +48,7 @@ def system_status(db: Session = Depends(get_db), ctx: RequestContext = Depends(g
             },
             "youtube": {"configured": s.youtube_configured, "region": s.youtube_region, "env": "YOUTUBE_API_KEY"},
             "pexels": {"configured": s.pexels_configured, "env": "PEXELS_API_KEY"},
+            "motion": (lambda ok_why: {"configured": ok_why[0], "detail": ok_why[1], "env": "MOTION_ENABLED"})(motion.available()),
             "whisper": {"configured": s.whisper_enabled, "model": s.whisper_model, "env": "WHISPER_ENABLED"},
         },
         "limits": {
@@ -54,6 +57,20 @@ def system_status(db: Session = Depends(get_db), ctx: RequestContext = Depends(g
             "max_job_cost_usd": s.max_job_cost_usd,
         },
     }
+
+
+@router.post("/api/system/check-claude")
+def check_claude(ctx: RequestContext = Depends(get_ctx)):
+    """Makes one tiny Haiku call (a fraction of a cent) to prove the key really works."""
+    s = get_settings()
+    try:
+        llm = ClaudeLLM(budget_usd=0.01)
+        reply = llm.complete("connection_test", "fast", "You are a connection test.", "Reply with exactly: OK", max_tokens=5)
+    except NotConfigured:
+        return {"ok": False, "error": "No key set. Add ANTHROPIC_API_KEY to the .env file and restart KINOVA."}
+    except Exception as e:  # auth, billing, network…
+        return {"ok": False, "error": explain_error(e)}
+    return {"ok": True, "model": s.model_fast, "reply": reply.text.strip()[:20]}
 
 
 @router.get("/api/overview")

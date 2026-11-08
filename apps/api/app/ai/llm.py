@@ -4,6 +4,7 @@
 today; another provider only needs to implement `complete`.
 """
 
+import base64
 import json
 import re
 from dataclasses import dataclass
@@ -12,6 +13,8 @@ from typing import Literal, Protocol
 from app.core.config import get_settings
 
 Tier = Literal["fast", "smart"]
+# Conservative per-image estimate for a ~1200×1200 contact sheet (≈ w*h/750).
+IMAGE_TOKENS = 2000
 
 
 class NotConfigured(Exception):
@@ -65,9 +68,12 @@ class ClaudeLLM:
         self.spent = spent_usd
         self._sink = sink
 
-    def complete(self, purpose: str, tier: Tier, system: str, prompt: str, max_tokens: int) -> Completion:
+    def complete(
+        self, purpose: str, tier: Tier, system: str, prompt: str, max_tokens: int, images: list[bytes] | None = None,
+    ) -> Completion:
         model, p_in, p_out = _prices(tier)
-        est = estimate_cost(tier, len(system) + len(prompt), max_tokens)
+        images = images or []
+        est = estimate_cost(tier, len(system) + len(prompt), max_tokens) + len(images) * IMAGE_TOKENS * p_in / 1_000_000
         if self.spent + est > self.budget:
             raise BudgetExceeded(
                 f"{purpose}: estimated ${est:.3f} would exceed the job cap "
@@ -78,7 +84,11 @@ class ClaudeLLM:
                 model=model,
                 max_tokens=max_tokens,
                 system=system,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": [
+                    *({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
+                                                   "data": base64.b64encode(img).decode()}} for img in images),
+                    {"type": "text", "text": prompt},
+                ]}],
             )
         except Exception as e:  # network, auth, rate-limit…
             if self._sink:
@@ -100,3 +110,24 @@ def extract_json(text: str) -> dict:
     if not raw:
         raise ValueError("No JSON object in model reply")
     return json.loads(raw)
+
+
+def explain_error(e: Exception) -> str:
+    """Plain-language reason a Claude call failed, for the UI."""
+    name = type(e).__name__
+    msg = str(e)
+    low = msg.lower()
+    if name == "AuthenticationError":
+        return ("Claude rejected the key. Use an API key from platform.claude.com → API Keys "
+                "(it starts with sk-ant-api…), paste it into .env and restart.")
+    if "credit balance" in low or "billing" in low:
+        return "The Claude account has no credit. Add some under Billing at platform.claude.com."
+    if name == "PermissionDeniedError":
+        return "This key isn't allowed to use the API. Create a new key at platform.claude.com → API Keys."
+    if name == "NotFoundError" and "model" in low:
+        return f"The configured model isn't available to this key ({msg[:160]})."
+    if name in ("APIConnectionError", "APITimeoutError"):
+        return "Couldn't reach Claude. Check the computer's internet connection."
+    if name == "RateLimitError":
+        return "Claude is rate-limiting this key right now. Try again in a minute."
+    return f"{name}: {msg[:200]}"

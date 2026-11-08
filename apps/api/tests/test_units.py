@@ -171,3 +171,61 @@ def test_pexels_search_picks_portrait_file(monkeypatch):
     clip = search_pexels("barber", min_duration=3, client=httpx.Client(transport=httpx.MockTransport(handler)))
     assert clip is not None and clip.id == "2" and clip.file_url == "https://x/hd.mp4"
     assert clip.credit()["author"] == "Ana"
+
+
+def test_crop_follows_subject_and_zoom():
+    from app.media.render import _crop_filter
+
+    f = _crop_filter(1080, 1920, 0.8, 1.15)
+    assert "crop=1080:1920:'max(0,min(iw-1080,iw*0.800-1080/2))'" in f
+    assert "iw*1.150" in f
+    assert "(ih-1920)*0.42" in f  # punch-ins keep headroom
+
+
+def test_hook_and_cta_timings():
+    from app.media.plan import Variation
+    from app.media.render import timings
+
+    v = Variation(key="a", hook_text="Watch this", cta_text="Book now", clips=[{"start": 0, "end": 20}])
+    assert timings(v, 20, True) == (2.8, 17.6)
+    assert timings(v, 6, True)[1] == 6  # too short for a CTA
+    assert timings(v, 20, False) == (0.0, 20)
+
+
+def test_explain_error_is_plain_language():
+    from app.ai.llm import explain_error
+
+    class AuthenticationError(Exception):
+        pass
+
+    assert "sk-ant-api" in explain_error(AuthenticationError("invalid x-api-key"))
+    assert "Billing" in explain_error(Exception("Your credit balance is too low"))
+
+
+def test_claude_check_endpoint_without_key(client):
+    r = client.post("/api/system/check-claude").json()
+    assert r["ok"] is False and ".env" in r["error"]
+
+
+def test_planner_sends_contact_sheets(monkeypatch):
+    from app.ai.planner import claude_plan
+
+    seen = {}
+
+    class FakeLLM:
+        def complete(self, purpose, tier, system, prompt, max_tokens, images=None):
+            seen["images"] = images
+            seen["prompt"] = prompt
+
+            class R:
+                text = ('{"summary": "s", "variations": [{"key": "hook", "cta_text": "Book now", '
+                        '"clips": [{"source": 0, "start": 1, "end": 9, "focus_x": 0.7, "zoom": 1.15}]}]}')
+            return R()
+
+    plan = claude_plan(FakeLLM(), [{"filename": "a.mp4", "duration": 20}], [None], None, None, "", "TikTok", 1,
+                       sheets=[b"jpg1", b"jpg2"], sheet_step=2.0)
+    assert seen["images"] == [b"jpg1", b"jpg2"]
+    assert "one frame every 2.0s" in seen["prompt"]
+    clip = plan.variations[0].clips[0]
+    assert (clip.focus_x, clip.zoom) == (0.7, 1.15)
+    assert plan.variations[0].cta_text == "Book now"

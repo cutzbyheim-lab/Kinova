@@ -333,9 +333,10 @@ export default function NewProduction() {
               <li><strong className="text-cream">Transcribe</strong> — {status.data?.integrations.whisper.configured
                 ? "free open-source Whisper, on your machine." : <span className="text-warn">skipped: Whisper is turned off.</span>}</li>
               <li><strong className="text-cream">Trends</strong> — {ytOn ? "top YouTube videos for your topic, last 30 days." : <span className="text-warn">skipped: YouTube not connected.</span>}</li>
-              <li><strong className="text-cream">Moments</strong> — {claudeOn ? "Claude picks the strongest cuts across every clip." : <span className="text-warn">non-AI fallback: Claude not connected.</span>}</li>
+              <li><strong className="text-cream">Moments</strong> — {claudeOn ? "Claude watches your footage and picks the strongest cuts across every clip." : <span className="text-warn">non-AI fallback: Claude not connected.</span>}</li>
               <li><strong className="text-cream">B-roll & music</strong> — {pexelsOn ? "stock cutaways from Pexels, music from your library." : "music from your library; B-roll needs Pexels."}</li>
-              <li><strong className="text-cream">Render</strong> — 9:16 with burned-in captions and your brand color.</li>
+              <li><strong className="text-cream">Render</strong> — {status.data?.integrations.motion?.configured
+                ? "9:16 with animated captions, hook title and CTA in your brand color." : "9:16 with captions in your brand color."}</li>
               <li><strong className="text-cream">Check & copy</strong> — automatic QC, then titles, captions and hashtags{claudeOn ? "." : <span className="text-warn"> (needs Claude).</span>}</li>
             </ol>
           </div>

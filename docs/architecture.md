@@ -31,9 +31,9 @@ CPU-bound on a laptop.
 | ingest | probe source, extract 16 kHz mono audio | fatal: unreadable file |
 | transcribe | faster-whisper (CPU, int8), word timestamps | skipped → cuts without speech |
 | trends | YouTube search (top viewed, last 30 days) + video details → pattern summary | skipped → plan without trends |
-| plan | Claude Sonnet → JSON `EditPlan` across all sources (clips, B-roll slots, music pick); validated, one repair attempt | non-AI heuristic, labelled |
+| plan | contact sheets (frames every ≥2 s, labelled `S<source> HH:MM:SS`) + word-timed transcripts → Claude Sonnet → JSON `EditPlan` (clips with `focus_x`/`zoom`, B-roll slots, music, hook, CTA); validated, one repair attempt | non-AI heuristic, labelled |
 | assets | search + download Pexels portrait clips for each B-roll slot (cached per org), resolve music tracks | skipped / warning, cut renders without them |
-| render | per-clip segments (any source) → lossless concat → B-roll overlays, captions (ASS/libass), music with sidechain ducking, loudness | retry without captions/B-roll/music |
+| render | per-clip segments (subject-centred crop + punch-in) → lossless concat → music ducking + loudness → **Remotion motion layer** (`apps/api/motion`: captions, hook, B-roll entrances, CTA) → FFmpeg finish (grade, grain, vignette, SFX) | motion fails → FFmpeg look (ASS captions, hard B-roll); then retry without extras |
 | qc | dimensions, duration, audio, A/V drift, caption cues | re-render once, else mark failed |
 | copy | Claude Haiku → title, hook, caption, hashtags, CTA | skipped, working titles kept |
 | deliver | final status: succeeded / partial / failed | — |
@@ -78,3 +78,12 @@ Swapping a provider means implementing the same small interface.
 React 19 + TypeScript (strict) + Vite + Tailwind v4, TanStack Query for server state (polling while a
 job runs), React Router. Design tokens live in `src/styles.css` (`@theme`). Pages that aren't built yet
 are honest "in production" pages — no fake data.
+
+## Motion layer
+
+`apps/api/motion` is a Remotion project built to the rules in `.claude/skills/remotion-motion-graphics`
+(springs, staggered entrances, faster exits, one hero color per frame, theme file). The Docker build bundles it and
+downloads Remotion's headless Chrome. The worker calls `node render.mjs` with a props file; assets are served to
+Chrome from a private `127.0.0.1` port for the length of the render, and the output is video-only — the mixed audio is
+muxed back in the finish pass. Hook-end and CTA-start times are computed once in Python (`render.timings`) so the
+sound effects land on the same frames as the animation.

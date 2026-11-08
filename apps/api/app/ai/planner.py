@@ -26,13 +26,27 @@ the brand profile, and optionally a music library. You output an editing plan as
 
 Rules:
 - Only use footage that exists: each clip names its `source` index and lies within that source's duration.
-  Start and end on natural speech boundaries (use the segment timestamps).
 - When there are several sources, build the best possible video from ALL of them: combine the strongest
   moments across clips, intercut where it helps the story, and do not ignore a source without a reason.
 - Variations must make genuinely different editing decisions (moments, order, pacing, length), not just
   different captions.
 - Use the trend data to choose lengths, hook style and pacing that match or beat what is performing now.
-- Never invent content."""
+- Never invent content.
+
+Editing craft (what separates a pro short from an amateur one):
+- The first 1.5s decides everything: open on the boldest line or the most striking visual, never on a greeting,
+  a breath or a setup.
+- Cut tight. Start each clip right as speech starts and end ~0.1s after the last word; cut out "um",
+  false starts, repeats and dead air by splitting into more, shorter clips. Use word timestamps, not just segments.
+- Structure: HOOK → context (one line) → 2–4 beats → payoff (the result, the reveal, the before/after) → CTA.
+- Visual moments matter as much as quotes: for hands-on work (a haircut, a product, a process) include the
+  satisfying visual beats — the transformation, the finished result, close-ups of the craft.
+
+You may receive CONTACT SHEETS: frames sampled from the footage, each tile stamped "S<source> HH:MM:SS.mmm".
+Use them to (1) find visually strong moments, (2) set each clip's `focus_x` to where the main subject sits
+horizontally (0 = left edge, 0.5 = center, 1 = right edge) so the vertical 9:16 crop keeps them in frame, and
+(3) choose `zoom` (1.0–1.25): alternate e.g. 1.0 / 1.15 between consecutive clips of the same shot so jump
+cuts feel intentional; keep 1.0 on wide shots where the action fills the frame."""
 
 BROLL_RULES = """B-ROLL (stock cutaways from Pexels, shown over the picture while the original audio continues):
 - Add 0–4 per variation, only where a visual illustrates what is being said (a product, a place, an action).
@@ -44,11 +58,14 @@ NO_BROLL = "B-ROLL: not available for this production — return an empty `broll
 
 
 def _transcript_lines(transcript: dict | None, max_chars: int) -> str:
+    """Segments with word-level timestamps, e.g. `[3.2-6.8] so(3.2) here's(3.5) the(3.7) trick(3.9)`."""
     if not transcript or not transcript.get("segments"):
-        return "(no speech detected — choose moments by timing)"
+        return "(no speech detected — choose moments by timing and the contact sheets)"
     lines, total = [], 0
     for seg in transcript["segments"]:
-        line = f"[{seg['start']:.1f}-{seg['end']:.1f}] {seg['text']}"
+        words = seg.get("words") or []
+        body = " ".join(f"{w['word']}({w['start']:.1f})" for w in words) if words else seg["text"]
+        line = f"[{seg['start']:.1f}-{seg['end']:.1f}] {body}"
         total += len(line) + 1
         if total > max_chars:
             lines.append("[… transcript truncated …]")
@@ -65,7 +82,7 @@ def _brand_block(brand: dict | None) -> str:
 
 
 def _sources_block(sources: list[dict], transcripts: list[dict | None]) -> str:
-    budget = max(3000, 16000 // max(len(sources), 1))
+    budget = max(6000, 40000 // max(len(sources), 1))  # word timings ≈ 3× the text; ~12k tokens max
     blocks = []
     for i, s in enumerate(sources):
         t = transcripts[i] if i < len(transcripts) else None
@@ -85,8 +102,15 @@ def claude_plan(
     n: int,
     music_library: list[dict] | None = None,
     allow_broll: bool = False,
+    sheets: list[bytes] | None = None,
+    sheet_step: float | None = None,
 ) -> EditPlan:
     styles = DEFAULT_STYLES[:n]
+    sheets = sheets or []
+    sheet_note = (
+        f"CONTACT SHEETS: {len(sheets)} image(s) above, one frame every {sheet_step:.1f}s per source, in source order."
+        if sheets else "CONTACT SHEETS: none (plan from the transcripts)."
+    )
     style_text = "\n".join(f"- {s}: {STYLE_LIBRARY[s]}" for s in styles)
     music_library = music_library or []
     music_text = (
@@ -107,6 +131,8 @@ YOUTUBE TREND PATTERNS FOR THIS TOPIC:
 SOURCES ({len(sources)}):
 {_sources_block(sources, transcripts)}
 
+{sheet_note}
+
 {BROLL_RULES if allow_broll else NO_BROLL}
 
 {music_text}
@@ -124,8 +150,9 @@ Return ONLY this JSON:
       "title_idea": "<working title, max 70 chars>",
       "hook_text": "<on-screen text for the first 3 seconds, max 6 words, or empty>",
       "subtitle_position": "center",
-      "reason": "<why these moments, referencing the trend data where relevant>",
-      "clips": [{{"source": <index>, "start": <seconds>, "end": <seconds>}}],
+      "cta_text": "<on-screen call to action, 2–4 words from the brand goals/goal, e.g. 'Book your cut', or empty>",
+      "reason": "<why these moments, referencing what you saw and the trend data>",
+      "clips": [{{"source": <index>, "start": <seconds>, "end": <seconds>, "focus_x": <0–1>, "zoom": <1.0–1.25>}}],
       "broll": [{{"at": <seconds into cut>, "duration": <seconds>, "query": "<stock search>"}}],
       "music": {{"track_id": "<id from library>", "volume": 0.15}} or null
     }}
@@ -142,14 +169,14 @@ Return ONLY this JSON:
             plan = plan.model_copy(update={"variations": [v.model_copy(update={"broll": []}) for v in plan.variations]})
         return plan
 
-    reply = llm.complete("edit_plan", "smart", SYSTEM, prompt, max_tokens=9000)
+    reply = llm.complete("edit_plan", "smart", SYSTEM, prompt, max_tokens=9000, images=sheets)
     try:
         return parse(reply.text)
     except (ValueError, KeyError, PlanError) as first_error:
         fix = llm.complete(
             "edit_plan_repair", "smart", SYSTEM,
             prompt + f"\n\nYour previous answer was invalid ({first_error}). Return corrected JSON only.",
-            max_tokens=7000,
+            max_tokens=7000, images=sheets,
         )
         return parse(fix.text)
 
@@ -200,5 +227,7 @@ def heuristic_plan(
         v["reason"] = "Heuristic pick (speech density / spacing) — not AI."
         v["hook_text"] = ""
         v["music"] = music
+        for k, c in enumerate(v["clips"]):  # alternate punch-ins so jump cuts read as intentional
+            c["zoom"] = 1.12 if k % 2 else 1.0
     plan = EditPlan(planner="heuristic", summary=reason, variations=variations[: max(1, min(n, 3))])
     return validate_plan(plan, durs, {m["id"] for m in music_library or []})

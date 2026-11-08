@@ -55,6 +55,8 @@ services:
     environment: *api-env
     # One job at a time: video work is CPU-heavy on a laptop.
     command: celery -A app.workers.celery_app worker --loglevel=INFO --concurrency=1 -Q production
+    # headless Chrome (motion graphics) needs more shared memory than Docker's 64 MB default
+    shm_size: "1gb"
     volumes:
       - storage:/data/storage
       - models:/data/models
